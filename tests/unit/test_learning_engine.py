@@ -22,16 +22,16 @@ from docuflow.learning.learning_engine import (
 
 class TestFilenameParsing:
     def test_correct_filename(self):
-        expected, detected = extract_numbers_from_filename("7173638_1764821192.png")
-        assert expected == "7173638"
+        expected, detected = extract_numbers_from_filename("4528913_9999999999.png")
+        assert expected == "4528913"
         assert detected is None
 
     def test_error_filename(self):
         expected, detected = extract_numbers_from_filename(
-            "7173638_detected_010494800542_1764821192.png"
+            "4528913_detected_04528913_9999999999.png"
         )
-        assert expected == "7173638"
-        assert detected == "010494800542"
+        assert expected == "4528913"
+        assert detected == "04528913"
 
     def test_unrecognized_filename(self):
         assert extract_numbers_from_filename("not_a_number.png") == (None, None)

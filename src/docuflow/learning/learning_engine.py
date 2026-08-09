@@ -73,9 +73,9 @@ def extract_numbers_from_filename(filename: str) -> Tuple[Optional[str], Optiona
 
     Expected formats:
 
-    - Correct: ``7173638_1764821192.png`` -> ``("7173638", None)``
-    - Error:   ``7173638_detected_010494800542_1764821192.png``
-               -> ``("7173638", "010494800542")``
+    - Correct: ``4528913_9999999999.png`` -> ``("4528913", None)``
+    - Error:   ``4528913_detected_04528913_9999999999.png``
+               -> ``("4528913", "04528913")``
     """
     match_error = re.match(r"^(\d+)_detected_(\d+)_\d+\.png$", filename)
     if match_error:
