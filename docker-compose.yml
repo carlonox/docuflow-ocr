@@ -1,0 +1,129 @@
+# ============================================================================
+# DocuFlow — Docker Compose for local development
+# ============================================================================
+#
+# Usage:
+#   # Build and start with default config (RapidOCR + Surya)
+#   docker compose up --build
+#
+#   # Start with Ollama integration (connects to host Ollama on port 11434)
+#   docker compose --profile ollama up --build
+#
+#   # Start with a custom entrypoint
+#   docker compose run --rm docuflow python examples/cascade_with_llm.py tests/fixtures/sample_id_card.png
+#
+#   # Interactive shell for debugging
+#   docker compose run --rm docuflow bash
+#
+# Volumes:
+#   - docuflow_data: persistent storage for learning engine state
+#   - docuflow_models: cached OCR models (Surya, RapidOCR)
+#   - docuflow_output: processed documents and results
+# ============================================================================
+
+services:
+  docuflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_RAPID: "true"
+        INSTALL_SURYA: "true"
+        INSTALL_PREPROCESS: "true"
+        INSTALL_VISION: "false"
+        INSTALL_BROWSER: "false"
+        WITH_GPU: "false"
+    image: docuflow:latest
+    container_name: docuflow
+    restart: unless-stopped
+    
+    # Connect to host services (Ollama, Google Vision emulator, etc.)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+    # Environment configuration
+    environment:
+      # Ollama endpoint (if using local LLM correction)
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      
+      # Google Cloud credentials (if using Google Vision provider)
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      
+      # DocuFlow runtime configuration
+      - DOCUFLOW_DATA_DIR=/data
+      - DOCUFLOW_MODELS_DIR=/models
+      - DOCUFLOW_USE_SURYA=${DOCUFLOW_USE_SURYA:-true}
+      - DOCUFLOW_USE_RAPID=${DOCUFLOW_USE_RAPID:-true}
+      - DOCUFLOW_USE_OLLAMA=${DOCUFLOW_USE_OLLAMA:-true}
+    
+    # Persistent volumes
+    volumes:
+      - docuflow_data:/data
+      - docuflow_models:/models
+      - docuflow_output:/output
+      # Mount local data directory for input documents (optional)
+      - ./data:/app/input:ro
+    
+    # Resource limits (adjust for your hardware)
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+    
+    # Default: run quick_start on sample document
+    command: ["python", "examples/quick_start.py", "/app/input/sample_id_card.png"]
+    
+    # Override with custom command:
+    # command: ["python", "examples/cascade_with_llm.py", "/app/input/my_document.png"]
+    
+    networks:
+      - docuflow-net
+    
+    # GPU support (uncomment if WITH_GPU=true in build)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Optional: Ollama service (uncomment to run Ollama in a container)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: docuflow-ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   networks:
+  #     - docuflow-net
+  #   # GPU support for Ollama (recommended)
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   # Pull glm-ocr on startup (optional)
+  #   # command: ["serve", "&&", "ollama", "pull", "glm-ocr:latest"]
+
+volumes:
+  docuflow_data:
+    driver: local
+  docuflow_models:
+    driver: local
+  docuflow_output:
+    driver: local
+  # ollama_data:
+  #   driver: local
+
+networks:
+  docuflow-net:
+    driver: bridge

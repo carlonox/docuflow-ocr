@@ -19,3 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Providers: Surya OCR 2, RapidOCR (ONNX), Google Cloud Vision, Ollama GLM,
   Tesseract.
 - Synthetic fixture generator and unit tests.
+- **Docker support**: multi-stage Dockerfile with build-arg-controlled provider
+  installation, Docker Compose for development, and comprehensive deployment
+  guide (docs/DEPLOY.md).

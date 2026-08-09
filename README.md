@@ -84,6 +84,40 @@ result = extractor.process("tests/fixtures/sample_id_card.png")
 print(result.fields, result.validation)
 ```
 
+## Docker (recommended)
+
+OCR projects are notorious for dependency hell. Docker solves it: one build, runs anywhere.
+
+```bash
+# Build with the recommended cascade (RapidOCR + Surya)
+docker build \
+  --build-arg INSTALL_RAPID=true \
+  --build-arg INSTALL_SURYA=true \
+  -t docuflow:cascade .
+
+# Process a document
+docker run --rm \
+  -v $(pwd)/documents:/input:ro \
+  -v $(pwd)/output:/output \
+  docuflow:cascade \
+  python examples/quick_start.py /input/my_document.png
+
+# Or with Docker Compose (development mode)
+docker compose up --build
+```
+
+Build arguments let you pick what to include:
+
+| Arg | Size | What it adds |
+|---|---|---|
+| `INSTALL_RAPID=true` | +500MB | Fast CPU-only OCR (no Paddle conflicts) |
+| `INSTALL_SURYA=true` | +2GB | Accurate OCR (CPU or GPU) |
+| `INSTALL_VISION=true` | +100MB | Google Cloud Vision SDK |
+| `INSTALL_PREPROCESS=true` | +200MB | Advanced preprocessing (Sauvola, deskew) |
+| `WITH_GPU=true` | +1GB | CUDA support for Surya |
+
+Full deployment guide with production patterns, Kubernetes, and GPU setup: [docs/DEPLOY.md](docs/DEPLOY.md)
+
 ## 100% local OCR with Ollama
 
 DocuFlow ships an Ollama provider for fully offline OCR with a local vision
