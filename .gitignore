@@ -1,0 +1,85 @@
+# ------------------------------------------------------------------
+# Credentials & secrets
+# ------------------------------------------------------------------
+credentials/
+*.json
+!src/docuflow/validation/patterns/examples/*.py
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# ------------------------------------------------------------------
+# Real documents — never commit images of real documents
+# ------------------------------------------------------------------
+temp_*.png
+temp_*.jpg
+!tests/fixtures/*.png
+!tests/fixtures/*.jpg
+*.pdf
+
+# ------------------------------------------------------------------
+# Learned state (can contain patterns derived from real data)
+# ------------------------------------------------------------------
+ocr_config_learned.json
+learning_stats.json
+error_patterns.json
+precision_stats.json
+manual_corrections_stats.json
+advanced_learning_model.json
+checkpoint*.json
+
+# ------------------------------------------------------------------
+# Python
+# ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ------------------------------------------------------------------
+# Virtual environments
+# ------------------------------------------------------------------
+venv/
+env/
+.venv/
+ENV/
+
+# ------------------------------------------------------------------
+# Selenium / browser
+# ------------------------------------------------------------------
+chromedriver*
+geckodriver*
+downloads/
+
+# ------------------------------------------------------------------
+# Tooling
+# ------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+*.log
+.DS_Store
+Thumbs.db

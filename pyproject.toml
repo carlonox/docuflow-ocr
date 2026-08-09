@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docuflow-ocr"
+version = "0.1.0"
+description = "Self-learning document processing framework with cascade OCR"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Carlos Javier Cuervo Baracaldo"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+]
+license = {text = "MIT"}
+keywords = ["ocr", "document-processing", "self-learning", "pipeline", "cascade"]
+
+[project.urls]
+Homepage = "https://github.com/carlonox/docuflow-ocr"
+Repository = "https://github.com/carlonox/docuflow-ocr.git"
+Documentation = "https://github.com/carlonox/docuflow-ocr/blob/main/README.md"
+
+[project.optional-dependencies]
+surya = ["surya-ocr>=0.5"]
+rapid = ["rapidocr-onnxruntime>=1.3"]
+vision = ["google-cloud-vision>=3.7", "gspread>=5.10"]
+ollama = ["requests>=2.31"]
+preprocessing = ["scikit-image>=0.21"]
+tesseract = ["pytesseract>=0.3.10"]
+browser = ["selenium>=4.15"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
