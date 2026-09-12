@@ -52,7 +52,7 @@ EOF
 build_minimal() {
     echo "Building minimal image (framework only)..."
     docker build -t "${IMAGE_NAME}:minimal" "$SCRIPT_DIR"
-    echo "✓ Built ${IMAGE_NAME}:minimal"
+    echo "Built ${IMAGE_NAME}:minimal"
 }
 
 build_cascade() {
@@ -63,7 +63,7 @@ build_cascade() {
         --build-arg INSTALL_PREPROCESS=true \
         -t "${IMAGE_NAME}:cascade" \
         "$SCRIPT_DIR"
-    echo "✓ Built ${IMAGE_NAME}:cascade"
+    echo "Built ${IMAGE_NAME}:cascade"
 }
 
 build_full() {
@@ -76,7 +76,7 @@ build_full() {
         --build-arg INSTALL_TESSERACT=true \
         -t "${IMAGE_NAME}:full" \
         "$SCRIPT_DIR"
-    echo "✓ Built ${IMAGE_NAME}:full"
+    echo "Built ${IMAGE_NAME}:full"
 }
 
 run_shell() {
@@ -171,7 +171,7 @@ for img in sorted(input_dir.glob('*.png')) + sorted(input_dir.glob('*.jpg')):
 
 output_file = output_dir / 'batch_results.json'
 output_file.write_text(json.dumps(results, indent=2, default=str))
-print(f'✓ Results saved to {output_file}')
+print(f'Results saved to {output_file}')
 "
 }
 
