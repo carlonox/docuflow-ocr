@@ -1,34 +1,32 @@
-# Procesar un corpus grande con DocuFlow
+# Running a large corpus through DocuFlow
 
-Guía para lotes de miles de documentos: qué mirar antes, cómo no pagar OCR de
-más y cómo reanudar sin repetir trabajo. Está escrita con lo aprendido en un
-corpus real de 35.748 PDFs (10,6 GB) del que solo el **18 %** necesitaba OCR.
+How to process thousands of documents without paying OCR for pages that already
+have text, and without restarting from zero when a run dies. Written from a real
+corpus of tens of thousands of PDFs where only about a fifth needed OCR.
 
-## 1. Primero, mídelo
+## 1. Measure before you run
 
-Antes de lanzar nada, separa los documentos en dos clases:
+Split the corpus in two classes first:
 
-| Clase | Cómo se detecta | Coste |
+| Class | How to tell | Cost |
 |---|---|---|
-| **Con capa de texto** | `page.get_text()` devuelve texto | ~10-30 ms por PDF |
-| **Solo imagen (escaneo)** | la capa está vacía | OCR real |
+| **Has a text layer** | `page.get_text()` returns text | ~10-30 ms per PDF |
+| **Image only (scan)** | the layer is empty | real OCR |
 
-En el corpus de referencia, menos de una quinta parte no tenía capa; el resto se
-resolvía con extracción directa. Lanzar OCR a todo habría multiplicado el tiempo por cinco
-sin mejorar nada.
+In the reference corpus fewer than one in five PDFs had no text layer. Running
+OCR on everything would have multiplied the runtime by five for no gain.
 
 ```python
 import fitz
 doc = fitz.open(path)
-tiene_capa = any(p.get_text().strip() for p in doc)
+has_layer = any(p.get_text().strip() for p in doc)
 ```
 
-## 2. La cascada hace el resto
+## 2. Let the cascade decide
 
-Para los que sí necesitan OCR, `CascadeOCR` ejecuta primero el proveedor rápido
-(RapidOCR, ~0,1-2 s) y solo escala al preciso (Surya) cuando la confianza baja
-del umbral. En pruebas reales, ~90 % de las páginas se quedan en el primer
-escalón.
+For the pages that do need OCR, `CascadeOCR` runs the fast provider first
+(RapidOCR, ~0.1-2 s) and escalates to the accurate one only when confidence is
+below the threshold. In practice around 90% of pages stay on the first step.
 
 ```python
 from docuflow.ocr.cascade import CascadeConfig, CascadeOCR
@@ -36,64 +34,71 @@ from docuflow.ocr.providers.rapid_ocr import RapidOCRProvider
 
 cascade = CascadeOCR(
     fast_provider=RapidOCRProvider(),
-    accurate_provider=None,          # añade SuryaProvider si hay GPU
+    accurate_provider=None,          # add SuryaProvider when a GPU is around
     config=CascadeConfig(fast_threshold=0.90),
 )
-result = cascade.extract("pagina.png")   # .text, .confidence
+result = cascade.extract("page.png")   # .text, .confidence
 ```
 
-## 3. Lote reanudable
+If the fast provider returns nothing at all (heavy blur, bad rotation), that is
+still a confidence of 0 and should escalate. Configure an accurate provider for
+production runs; a single-provider cascade gives up on those pages.
 
-`examples/batch_corpus.py` implementa el patrón completo:
+## 3. Resumable batches
+
+`examples/batch_corpus.py` implements the whole pattern:
 
 ```bash
-# 1) corpus de prueba reproducible (sin datos de nadie)
-python examples/make_sample_corpus.py --out samples --n 40
+# 1) reproducible synthetic corpus (no real documents)
+python examples/make_sample_corpus.py --out samples --n 120
 
-# 2) lote
+# 2) batch
 python examples/batch_corpus.py --root samples --out demo.jsonl --sleep 0.3
 
-# 3) informe
-python scripts/dashboard.py demo.jsonl -o dashboard.html --titulo "samples"
+# 3) report
+python scripts/dashboard.py demo.jsonl -o dashboard.html --title "samples"
 ```
 
-- Escribe **una línea JSONL por documento** con el texto de cada página.
-- `done.txt` permite relanzar el comando: salta lo ya procesado.
-- `--sleep` deja respirar a la CPU; `--workers > 1` está bloqueado salvo
-  `--allow-workers` (con RapidOCR y CPU, más procesos empeoran el tiempo y
-  saturan la máquina).
-- Prioridad de proceso **BELOW_NORMAL** y `OMP_NUM_THREADS=2` por defecto.
+- One JSONL line per document, with the text of every page.
+- `done.txt` makes the command resumable: finished documents are skipped.
+- `--sleep` leaves room for the desktop; `--workers > 1` is blocked unless you
+  pass `--allow-workers` (with RapidOCR on CPU, extra processes are slower and
+  saturate the machine).
+- The process runs at **BELOW_NORMAL** priority with `OMP_NUM_THREADS=2`.
 
-## 4. Aprender el formato repetido
+## 4. Learning the repeated formats
 
-La cascada paga el modelo caro página a página. El siguiente escalón es aprender
-por **formato**: si un tipo de documento (factura bancaria, acta, cédula) se
-resuelve siempre con confianza alta en el motor rápido, no hace falta volver a
-probarlo.
+The cascade pays the accurate model page by page. The next step is to learn per
+**format**: if one kind of document (bank receipt, minutes, ID card) is always
+resolved by the fast provider with high confidence, it does not need the accurate
+stage again.
 
-`LearningEngine` ya hace la parte difícil —minar confusiones (1↔7, 0↔O),
-comparar características de imagen de los fallos y proponer ajustes— pero está
-pensado para campos con referencia. Para texto libre el equivalente es:
+`LearningEngine` already does the hard part: mines character confusions (1 vs 7,
+0 vs O), compares image features of failing documents and proposes parameter
+adjustments. It expects fields with reference values, so for free text the
+equivalent is:
 
-1. Agrupar páginas por firma de formato (primera línea + proporción de campos).
-2. Guardar confianza media por formato.
-3. Si la confianza es alta, marcar el formato como «resuelto por el rápido».
-4. Las páginas dudosas alimentan `ManualFeedback` → `LearningEngine.analyze()`.
+1. Group pages by format signature (first line plus field layout).
+2. Store mean confidence per format.
+3. Mark formats that the fast provider resolves as settled.
+4. Feed doubtful pages into `ManualFeedback` and then `LearningEngine.analyze()`.
 
-Mientras eso se implementa, el dashboard ya muestra qué proveedor resolvió cada
-página y qué documentos quedaron por debajo de 0.80.
+Until that exists, the dashboard already shows which provider resolved each page
+and which documents fell below 0.80.
 
-## 5. Resultados de referencia
+## 5. Reference numbers
 
-Corpus sintético de `make_sample_corpus.py` (40 PDFs: 20 con capa, 20 escaneados):
+Synthetic corpus from `make_sample_corpus.py` (120 PDFs: 60 with a text layer,
+60 image-only, some heavily degraded):
 
-| Métrica | Valor |
+| Metric | Value |
 |---|---|
-| Documentos | 40 |
-| Con capa de texto | 20 (50 %) |
-| OCR real | 20 |
-| Velocidad (1 proceso, CPU) | ~0,25 PDF/s |
-| Confianza media (RapidOCR) | ver dashboard |
+| Documents | 120 |
+| Resolved from the text layer | 60 (50%) |
+| Real OCR | 60 pages |
+| Speed (1 process, CPU) | ~2.2 PDF/s on clean scans |
+| Mean confidence | see dashboard |
+| Documents below 0.80 | 9 |
 
-En un corpus de decenas de miles de PDFs con ~18 % escaneados, la estimación con un
-solo proceso es de varias horas; con GPU, entre una y tres.
+On the reference corpus (tens of thousands of PDFs, ~18% scans) a single process
+needs several hours; with a GPU, one to three.
