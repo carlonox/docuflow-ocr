@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-batch_corpus.py — OCR por lotes de un corpus local con docuflow (cascade) o RapidOCR.
+batch_corpus.py - batch OCR of a local corpus with docuflow (cascade) or RapidOCR.
 
-Estrategia (la que ahorra tiempo):
-  1. Si la pagina del PDF YA tiene capa de texto  -> se usa, coste ~0.
-  2. Si no la tiene                                -> render a imagen y OCR.
-  3. El OCR va por el cascade de docuflow si esta en el path; si no, RapidOCR directo.
+Strategy (the part that saves the time):
+  1. If the PDF page ALREADY has a text layer -> use it, cost ~0.
+  2. If it does not                          -> render to image and OCR.
+  3. OCR goes through docuflow's cascade when importable; otherwise RapidOCR.
 
-Reanudable: registra cada PDF terminado en done.txt y salta los ya hechos.
-Salida: un JSONL con {path, pages:[{n, text, provider, conf}], text_chars}.
+Resumable: every finished PDF is recorded in done.txt and skipped next time.
+Output: one JSONL line per document: {path, pages:[{n, text, provider, conf}]}.
 
-Uso:
+Usage:
   python examples/batch_corpus.py --root samples --out demo.jsonl
-  python examples/batch_corpus.py --lista pendientes.txt --out demo.jsonl --sleep 0.3
+  python examples/batch_corpus.py --list pending.txt --out demo.jsonl --sleep 0.3
 """
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ import sys
 import time
 from pathlib import Path
 
-# Limites de CPU ANTES de que onnxruntime se cargue: por defecto usa todos los
-# nucleos y deja el PC inutilizable (paso el 7-nov: CPU al 100% y cuelgue).
+# CPU limits BEFORE onnxruntime loads: by default it grabs every core and makes
+# the machine unusable (happened once: 100% CPU, desktop froze).
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "2")
 
@@ -38,7 +38,7 @@ except ImportError:
 
 
 def low_priority() -> None:
-    """Baja la prioridad del proceso para no ahogar el escritorio."""
+    """Lower the process priority so the desktop stays responsive."""
     if os.name != "nt":
         try:
             os.nice(10)
@@ -55,12 +55,12 @@ def low_priority() -> None:
 
 
 def to_host(path: str) -> Path:
-    """Traduce rutas /opt/data/shared/... a la ruta de Windows."""
+    """Normalise a path (kept for callers that pass container-style paths)."""
     return Path(path.strip())
 
 
 def build_ocr():
-    """Devuelve una funcion (pdf_path, page_index, pix) -> (texto, provider, conf)."""
+    """Return a callable (image_path) -> (text, provider, confidence)."""
     sys.path.insert(0, DOCUFLOW_SRC)
     try:
         from docuflow.ocr.cascade import CascadeConfig, CascadeOCR
@@ -76,10 +76,10 @@ def build_ocr():
             r = cascade.extract(img_path)
             return (getattr(r, "text", "") or "", "docuflow-cascade", float(getattr(r, "confidence", 0.0) or 0.0))
 
-        print("[ocr] usando docuflow cascade (RapidOCR)", flush=True)
+        print("[ocr] using docuflow cascade (RapidOCR)", flush=True)
         return run
     except Exception as exc:
-        print(f"[ocr] docuflow no disponible ({type(exc).__name__}: {exc}); uso RapidOCR directo", flush=True)
+        print(f"[ocr] docuflow unavailable ({type(exc).__name__}: {exc}); falling back to RapidOCR", flush=True)
         from rapidocr_onnxruntime import RapidOCR
 
         engine = RapidOCR()
@@ -126,15 +126,15 @@ def process(pdf: Path, ocr_run, text_only: bool, dpi: int, max_pages: int | None
 
 
 def _worker(path: str, text_only: bool, dpi: int, max_pages):
-    """Proceso hijo: construye su propio OCR y procesa un PDF."""
+    """Child process: builds its own OCR engine and processes one PDF."""
     run = None if text_only else build_ocr()
     return process(Path(path), run, text_only, dpi, max_pages)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--lista", help="fichero con una ruta de PDF por linea")
-    ap.add_argument("--root", help="carpeta a recorrer")
+    ap.add_argument("--list", help="file with one PDF path per line")
+    ap.add_argument("--root", help="folder to walk")
     ap.add_argument("--out", default="batch.jsonl")
     ap.add_argument("--done", default="done.txt")
     ap.add_argument("--limit", type=int, default=0)
@@ -146,10 +146,10 @@ def main():
     ap.add_argument("--text-only", action="store_true")
     args = ap.parse_args()
 
-    if args.lista:
-        paths = [to_host(l) for l in open(args.lista, encoding="utf-8", errors="replace") if l.strip()]
+    if args.list:
+        paths = [to_host(l) for l in open(args.list, encoding="utf-8", errors="replace") if l.strip()]
     elif args.root:
-        # os.walk tolera enlaces rotos (WinError 1920 en .venv/lib64); rglob no.
+        # os.walk tolerates broken symlinks (WinError 1920 on .venv/lib64); rglob does not.
         paths = []
         skip = {"node_modules", ".git", "__pycache__", ".venv", "venv", "site-packages"}
         for dp, dn, fn in os.walk(args.root, onerror=lambda e: None):
@@ -159,7 +159,7 @@ def main():
                     paths.append(Path(dp) / f)
         paths.sort()
     else:
-        print("Falta --lista o --root")
+        print("Missing --list or --root")
         return 2
 
     done = set()
@@ -167,14 +167,14 @@ def main():
         done = {l.strip() for l in open(args.done, encoding="utf-8", errors="replace") if l.strip()}
 
     if args.workers > 1 and not getattr(args, "allow_workers", False):
-        print("[aviso] --workers>1 se ignora sin --allow-workers (se comio la CPU el 7-nov)")
+        print("[warn] --workers>1 ignored without --allow-workers (it ate the CPU once)")
         args.workers = 1
     if not args.text_only:
         low_priority()
     todo = [p for p in paths if str(p) not in done]
     if args.limit:
         todo = todo[: args.limit]
-    print(f"[plan] {len(paths)} PDFs, {len(done)} hechos, {len(todo)} por procesar", flush=True)
+    print(f"[plan] {len(paths)} PDFs, {len(done)} done, {len(todo)} to process", flush=True)
 
     t0 = time.time()
     n_ok = n_err = 0
@@ -217,7 +217,7 @@ def main():
                         print(f"[err] {p}: {type(exc).__name__}: {exc}", flush=True)
                     if k % 20 == 0 or k == len(todo):
                         print(f"[{k}/{len(todo)}] {k/max(time.time()-t0,1e-6):.2f} PDF/s | ok={n_ok} err={n_err}", flush=True)
-    print(f"[fin] {n_ok} ok, {n_err} errores, {time.time()-t0:.1f}s -> {args.out}", flush=True)
+    print(f"[done] {n_ok} ok, {n_err} errors, {time.time()-t0:.1f}s -> {args.out}", flush=True)
     return 0
 
 
