@@ -1,73 +1,82 @@
 #!/usr/bin/env python3
 """
-make_sample_corpus.py — genera un corpus sintético para probar el lote y el dashboard.
+make_sample_corpus.py - synthetic document corpus for demos and benchmarks.
 
-Crea PDFs con datos inventados (facturas, contratos, actas, recibos) en dos
-variantes: con capa de texto y solo imagen (como un escaneo). Sirve para medir
-tiempos y ver el dashboard sin usar documentos reales de nadie.
+Creates PDFs with invented data (invoices, contracts, minutes, receipts) in two
+variants: with a text layer, and image-only (like a scan). About one in six
+scanned pages gets heavy degradation (rotation, blur, noise) so the review queue
+in the dashboard is not empty.
 
-Uso:
+Nothing here comes from real documents.
+
+Usage:
     python examples/make_sample_corpus.py --out samples --n 40
 """
 from __future__ import annotations
 
 import argparse
+import io
 import random
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
 
 TIPOS = [
-    ("FACTURA", "Factura de venta", ["N° {n}", "Fecha: 2026-{m:02d}-{d:02d}", "Subtotal: ${v:,}", "IVA (19%): ${iva:,}", "Total: ${tot:,}"]),
-    ("CONTRATO", "Contrato de prestación de servicios", ["Parte A: Empresa Ejemplo S.A.S.", "Parte B: Proveedor Demo Ltda.", "Duración: {m} meses", "Valor: ${v:,}"]),
-    ("ACTA", "Acta de reunión", ["Asistentes: 4", "Punto 1: revisión de avance", "Punto 2: pendientes", "Próxima sesión: 2026-{m:02d}-{d:02d}"]),
-    ("RECIBO", "Recibo de pago", ["Recibido de: Cliente Demo", "Concepto: servicio mensual", "Monto: ${v:,}", "Medio: transferencia"]),
+    ("INVOICE", "Sales invoice", ["No. {n}", "Date: 2026-{m:02d}-{d:02d}", "Subtotal: ${v:,}", "VAT (19%): ${iva:,}", "Total: ${tot:,}"]),
+    ("CONTRACT", "Service agreement", ["Party A: Example Corp.", "Party B: Demo Vendor Ltd.", "Term: {m} months", "Value: ${v:,}"]),
+    ("MINUTES", "Meeting minutes", ["Attendees: 4", "Item 1: progress review", "Item 2: open actions", "Next session: 2026-{m:02d}-{d:02d}"]),
+    ("RECEIPT", "Payment receipt", ["Received from: Demo Client", "Concept: monthly service", "Amount: ${v:,}", "Method: transfer"]),
 ]
 
 
-def make_text_pdf(path: Path, titulo: str, cuerpo: list[str]) -> None:
+def _render_page(titulo: str, lines: list[str]) -> fitz.Pixmap:
     doc = fitz.open()
     page = doc.new_page()
     y = 90
     page.insert_text((72, y), titulo, fontsize=16, fontname="helv")
-    for line in cuerpo:
+    for line in lines:
+        y += 26
+        page.insert_text((72, y), line, fontsize=11, fontname="helv")
+    pix = page.get_pixmap(dpi=150)
+    doc.close()
+    return pix
+
+
+def make_text_pdf(path: Path, titulo: str, lines: list[str]) -> None:
+    doc = fitz.open()
+    page = doc.new_page()
+    y = 90
+    page.insert_text((72, y), titulo, fontsize=16, fontname="helv")
+    for line in lines:
         y += 26
         page.insert_text((72, y), line, fontsize=11, fontname="helv")
     doc.save(path)
     doc.close()
 
 
-def make_scanned_pdf(path: Path, titulo: str, cuerpo: list[str]) -> None:
-    """Sin capa de texto: primero una página con texto, luego se rasteriza."""
-    tmp = fitz.open()
-    page = tmp.new_page()
-    y = 90
-    page.insert_text((72, y), titulo, fontsize=16, fontname="helv")
-    for line in cuerpo:
-        y += 26
-        page.insert_text((72, y), line, fontsize=11, fontname="helv")
-    pix = page.get_pixmap(dpi=150)
-    tmp.close()
-    # degradado: ruido + giro leve para simular escaneos malos
-    from PIL import Image, ImageEnhance
-    import io, random
+def make_scanned_pdf(path: Path, titulo: str, lines: list[str]) -> None:
+    """Image-only PDF: render text, then degrade and embed as a picture."""
+    pix = _render_page(titulo, lines)
     img = Image.open(io.BytesIO(pix.tobytes("png")))
-    severe = random.random() < 0.18
+
+    severe = random.random() < 0.16
     if severe or random.random() < 0.35:
-        ang = random.uniform(-5.0, 5.0) if severe else random.uniform(-1.6, 1.6)
-        img = img.rotate(ang, expand=True, fillcolor="white")
+        angle = random.uniform(-5.0, 5.0) if severe else random.uniform(-1.6, 1.6)
+        img = img.rotate(angle, expand=True, fillcolor="white")
         img = ImageEnhance.Contrast(img).enhance(0.28 if severe else 0.55)
         if severe:
-            from PIL import ImageFilter
             img = img.filter(ImageFilter.GaussianBlur(1.4))
-        import numpy as _np
-        arr = _np.array(img).astype("int16")
-        arr += _np.random.normal(0, 28, arr.shape).astype("int16")
-        img = Image.fromarray(_np.clip(arr, 0, 255).astype("uint8"))
-    buf = io.BytesIO(); img.save(buf, "PNG"); png_bytes = buf.getvalue()
+        arr = np.array(img).astype("int16")
+        arr += np.random.normal(0, 28, arr.shape).astype("int16")
+        img = Image.fromarray(np.clip(arr, 0, 255).astype("uint8"))
+
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
     out = fitz.open()
-    p2 = out.new_page(width=612, height=792)
-    p2.insert_image(p2.rect, stream=png_bytes)
+    page = out.new_page(width=612, height=792)
+    page.insert_image(page.rect, stream=buf.getvalue())
     out.save(path)
     out.close()
 
@@ -81,21 +90,21 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     random.seed(7)
-    hechos = 0
+    made = 0
     for i in range(1, args.n + 1):
-        tipo, titulo, campos = random.choice(TIPOS)
-        v = random.randint(50_000, 9_000_000)
-        cuerpo = [c.format(n=f"{i:04d}", m=random.randint(1, 12), d=random.randint(1, 28),
-                           v=v, iva=int(v * 0.19), tot=int(v * 1.19)) for c in campos]
-        escaneado = i % 2 == 0
-        nombre = f"{tipo.lower()}-{i:03d}{'-scan' if escaneado else ''}.pdf"
-        destino = out / nombre
-        if escaneado:
-            make_scanned_pdf(destino, f"{titulo} N° {i:04d}", cuerpo)
+        kind, title, fields = random.choice(TIPOS)
+        value = random.randint(50_000, 9_000_000)
+        lines = [f.format(n=f"{i:04d}", m=random.randint(1, 12), d=random.randint(1, 28),
+                          v=value, iva=int(value * 0.19), tot=int(value * 1.19)) for f in fields]
+        scanned = i % 2 == 0
+        name = f"{kind.lower()}-{i:03d}{'-scan' if scanned else ''}.pdf"
+        target = out / name
+        if scanned:
+            make_scanned_pdf(target, f"{title} No. {i:04d}", lines)
         else:
-            make_text_pdf(destino, f"{titulo} N° {i:04d}", cuerpo)
-        hechos += 1
-    print(f"{hechos} PDFs en {out} (mitad con capa de texto, mitad solo imagen)")
+            make_text_pdf(target, f"{title} No. {i:04d}", lines)
+        made += 1
+    print(f"{made} PDFs in {out} (half with a text layer, half image-only)")
     return 0
 
 
