@@ -84,6 +84,30 @@ result = extractor.process("tests/fixtures/sample_id_card.png")
 print(result.fields, result.validation)
 ```
 
+## Batch runs and the dashboard
+
+For thousands of documents the win is not a better model, it is *not OCR-ing what
+already has text*. `examples/batch_corpus.py` walks a folder, uses the PDF text
+layer when it exists and sends only the image-only pages through the cascade.
+It is resumable (`done.txt`) and writes one JSONL line per document.
+
+```bash
+# Reproducible synthetic corpus (no real documents)
+python examples/make_sample_corpus.py --out samples --n 120
+
+# Batch: text layer first, OCR only what needs it
+python examples/batch_corpus.py --root samples --out demo.jsonl --sleep 0.3
+
+# Self-contained HTML report (no CDN, no JS)
+python scripts/dashboard.py demo.jsonl -o dashboard.html --titulo "samples"
+```
+
+![DocuFlow batch dashboard](docs/dashboard-batch.png)
+
+The report answers three questions: how much of the corpus resolved from the text
+layer, what confidence each provider reached, and which documents fell below 0.80
+and need a human look. Full guide: [docs/BATCH_CORPUS.md](docs/BATCH_CORPUS.md).
+
 ## Docker (recommended)
 
 OCR projects are notorious for dependency hell. Docker solves it: one build, runs anywhere.
